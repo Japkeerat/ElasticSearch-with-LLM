@@ -1,0 +1,48 @@
+{
+  "audit-logs": {
+    "mappings": {
+      "properties": {
+        "user": {
+          "properties": {
+            "id": {
+              "type": "text",
+              "fields": {
+                "keyword": { "type": "keyword" }
+              }
+            },
+            "name": {
+              "type": "text"
+            },
+            "role": {
+              "type": "keyword"
+            }
+          }
+        },
+        "log_id": { "type": "keyword" },
+        "timestamp": { "type": "date" },
+        "session": {
+          "properties": {
+            "login_time": { "type": "date" },
+            "logout_time": { "type": "date" }
+          }
+        },
+        "action": { "type": "keyword" },
+        "entity": {
+          "properties": {
+            "type": { "type": "keyword" },
+            "id": { "type": "keyword" },
+            "field_changes": {
+              "type": "nested",
+              "properties": {
+                "field": { "type": "keyword" },
+                "old": { "type": "text" },
+                "new": { "type": "text" }
+              }
+            }
+          }
+        },
+        "client_ip": { "type": "ip" }
+      }
+    }
+  }
+}
