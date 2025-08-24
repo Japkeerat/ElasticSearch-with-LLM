@@ -2,6 +2,8 @@ elasticsearch==9.0.2
 faker==37.3.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.0
-langchain==0.3.25
-langchain-community==0.3.24
-openai==1.85.0
+openai==1.101.0
+google-adk==1.12.0
+litellm==1.76.0
+openinference-instrumentation-google-adk==0.1.3
+arize-phoenix-otel==0.13.0
