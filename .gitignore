@@ -7,3 +7,11 @@
 
 # Environment File
 .env
+
+# Logs
+logs/
+*.log
+
+# Cache
+**/__pycache__
+**/*.pyc

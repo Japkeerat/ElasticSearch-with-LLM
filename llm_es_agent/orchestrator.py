@@ -10,9 +10,9 @@ class OrchestratorAgent:
             model=LiteLlm("openai/gpt-4o-mini"),
             description="Root user requests to appropriate agent if a specialised agent is needed. Else, answers the query directly",
             instruction=self.__get_orchestrator_instructions(),
-            sub_agents=[]
+            sub_agents=[],
         )
-    
+
     def __get_orchestrator_instructions(self) -> str:
         return """
         You are an intelligent orchestration agent responsible for handling user queries.
@@ -37,8 +37,6 @@ class OrchestratorAgent:
         Use your judgment to determine when to delegate vs. handle directly.
         """
 
+
 def create_orchestrator():
     return OrchestratorAgent()
-
-
-

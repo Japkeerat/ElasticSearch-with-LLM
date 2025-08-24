@@ -1,7 +1,7 @@
-import logging
 import sys
-import asyncio
 import uuid
+import logging
+import asyncio
 from pathlib import Path
 from typing import Optional
 
@@ -11,15 +11,15 @@ from dotenv import load_dotenv
 try:
     import phoenix as px
     from opentelemetry import trace as trace_api
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk import trace as trace_sdk
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
     PHOENIX_AVAILABLE = True
 except ImportError as e:
     PHOENIX_AVAILABLE = False
 
-from orchestrator import create_orchestrator
+from llm_es_agent.orchestrator import create_orchestrator
 
 
 # Load environment variables
@@ -84,7 +84,7 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
         Configured logger instance
     """
     # Create logs directory
-    root_folder = Path(__file__).parent
+    root_folder = Path(__file__).parent.parent
     log_folder = root_folder / "logs"
     log_folder.mkdir(exist_ok=True)
     
