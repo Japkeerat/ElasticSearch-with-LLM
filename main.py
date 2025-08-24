@@ -84,7 +84,7 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
         Configured logger instance
     """
     # Create logs directory
-    root_folder = Path(__file__).parent.parent
+    root_folder = Path(__file__).parent
     log_folder = root_folder / "logs"
     log_folder.mkdir(exist_ok=True)
     
