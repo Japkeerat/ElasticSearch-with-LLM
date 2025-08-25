@@ -80,7 +80,7 @@ Agent: [Analyzes user activity data, creates aggregation query, presents insight
 
 1. **Clone and navigate to the project:**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/Japkeerat/ElasticSearch-with-LLM
    cd ElasticSearch-with-LLM
    ```
 
@@ -157,8 +157,6 @@ agents:
 ```bash
 python test_config_system.py
 ```
-
-For detailed configuration options, see [CONFIGURATION_GUIDE.md](CONFIGURATION_GUIDE.md).
 
 ## 📊 Usage Examples
 
