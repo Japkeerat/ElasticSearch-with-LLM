@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class IndexSchema(BaseModel):
     """Schema information for the selected index."""
     index: str = Field(description="Name of the index")
-    schema: Dict[str, Any] = Field(description="Simplified schema structure with field types")
+    index_schema: Dict[str, Any] = Field(description="Simplified index_schema structure with field types")
     properties_count: int = Field(description="Number of properties/fields in the index")
 
 
