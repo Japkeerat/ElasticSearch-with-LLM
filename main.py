@@ -216,6 +216,16 @@ async def _process_query_internal(runner, session_service, query: str, user_id: 
             session_id=session_id
         )
         logger.debug(f"Created new session: {session_id}")
+
+        # Initialize session state with the original user query (ADK pattern)
+        await session_service.set_session_state(
+            app_name=app_name,
+            user_id=user_id,
+            session_id=session_id,
+            key="original_user_query",
+            value=query
+        )
+        logger.debug(f"Initialized session state with user query: {query}")
         
         if span:
             span.set_attribute("session.id", session_id)

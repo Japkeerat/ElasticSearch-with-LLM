@@ -34,13 +34,14 @@ class IndexSelectionAgent:
         # Load instructions from prompt file
         instructions = self._get_agent_instructions()
         
-        # Create the agent
+        # Create the agent with output key for state management
         agent = LlmAgent(
             name="IndexSelectionAgent",
             model=LiteLlm("openai/gpt-4o-mini"),
             description="Specialized agent for selecting the most appropriate Elasticsearch index for a user query",
             instruction=instructions,
-            tools=[list_indices_tool, get_mapping_tool, user_selection_tool]
+            tools=[list_indices_tool, get_mapping_tool, user_selection_tool],
+            output_key="index_selection_result"  # ADK will automatically save final response to session state
         )
         
         return agent
