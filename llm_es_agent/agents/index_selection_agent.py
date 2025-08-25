@@ -1,6 +1,8 @@
 import logging
 from pathlib import Path
+from typing import Optional, List, Dict, Any
 
+from pydantic import BaseModel, Field
 from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools import FunctionTool
@@ -8,6 +10,36 @@ from google.adk.tools import FunctionTool
 from llm_es_agent.tools.elasticsearch_tools import IndexDiscoveryTools, UserInteractionTools
 
 logger = logging.getLogger(__name__)
+
+
+class IndexSchema(BaseModel):
+    """Schema information for the selected index."""
+    index: str = Field(description="Name of the index")
+    schema: Dict[str, Any] = Field(description="Simplified schema structure with field types")
+    properties_count: int = Field(description="Number of properties/fields in the index")
+
+
+class SelectionMetadata(BaseModel):
+    """Metadata about how the index was selected."""
+    selection_method: str = Field(description="Method used for selection: 'automatic', 'schema_analysis', 'user_input', or 'error'")
+    candidate_indices: List[str] = Field(description="List of candidate indices that were considered")
+    reasoning: str = Field(description="Brief explanation of why this index was selected")
+    confidence: str = Field(description="Confidence level: 'high', 'medium', 'low', or 'none'")
+
+
+class ValidationResult(BaseModel):
+    """Validation results for the selected index."""
+    index_exists: bool = Field(description="Whether the selected index exists in Elasticsearch")
+    schema_retrieved: bool = Field(description="Whether the schema was successfully retrieved")
+    ready_for_query_generation: bool = Field(description="Whether the selection is ready for the next pipeline stage")
+
+
+class IndexSelectionOutput(BaseModel):
+    """Structured output for the Index Selection Agent."""
+    selected_index: Optional[str] = Field(description="Name of the selected index, or null if selection failed")
+    index_schema: Optional[IndexSchema] = Field(description="Complete schema information for the selected index")
+    selection_metadata: SelectionMetadata = Field(description="Metadata about the selection process")
+    validation: ValidationResult = Field(description="Validation results for the selection")
 
 
 class IndexSelectionAgent:
@@ -34,13 +66,14 @@ class IndexSelectionAgent:
         # Load instructions from prompt file
         instructions = self._get_agent_instructions()
         
-        # Create the agent with output key for state management
+        # Create the agent with output schema and output key for state management
         agent = LlmAgent(
             name="IndexSelectionAgent",
             model=LiteLlm("openai/gpt-4o-mini"),
             description="Specialized agent for selecting the most appropriate Elasticsearch index for a user query",
             instruction=instructions,
             tools=[list_indices_tool, get_mapping_tool, user_selection_tool],
+            output_schema=IndexSelectionOutput,  # Enforces JSON output structure
             output_key="index_selection_result"  # ADK will automatically save final response to session state
         )
         
