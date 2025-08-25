@@ -2,7 +2,7 @@ from pathlib import Path
 
 from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
-from .es_agent import create_elasticsearch_agent
+from llm_es_agent.pipeline_agent import create_elasticsearch_agent
 
 
 class OrchestratorAgent:
@@ -10,7 +10,7 @@ class OrchestratorAgent:
     def __init__(self):
         # Create the Elasticsearch sub-agent
         es_agent = create_elasticsearch_agent()
-        
+
         self.agent = LlmAgent(
             name="Orchestrator",
             model=LiteLlm("openai/gpt-4o-mini"),
