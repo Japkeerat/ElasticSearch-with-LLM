@@ -2,17 +2,21 @@ from pathlib import Path
 
 from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
+from .es_agent import create_elasticsearch_agent
 
 
 class OrchestratorAgent:
 
     def __init__(self):
+        # Create the Elasticsearch sub-agent
+        es_agent = create_elasticsearch_agent()
+        
         self.agent = LlmAgent(
             name="Orchestrator",
             model=LiteLlm("openai/gpt-4o-mini"),
             description="Root user requests to appropriate agent if a specialised agent is needed. Else, answers the query directly",
             instruction=self.__get_orchestrator_instructions(),
-            sub_agents=[],
+            sub_agents=[es_agent.agent],  # Add the ES agent as a sub-agent
         )
 
     def __get_orchestrator_instructions(self) -> str:
