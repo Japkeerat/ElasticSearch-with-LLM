@@ -273,10 +273,3 @@ docker-compose down -v && docker-compose up -d
 4. Add tests if applicable
 5. Submit a pull request
 
-## 📄 License
-
-[Add your license information here]
-
----
-
-**Need Help?** Check the logs, Phoenix dashboard, or open an issue for support.
