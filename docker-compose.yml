@@ -1,0 +1,128 @@
+version: '3.8'
+
+services:
+  # Elasticsearch Service
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: llm-es-elasticsearch
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=llm-es-cluster
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - llm-es-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Kibana Service
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: llm-es-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - SERVER_NAME=kibana
+      - SERVER_HOST=0.0.0.0
+      - XPACK_SECURITY_ENABLED=false
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=a7a6311933d3503b89bc2dbc36572c33a6c10925682e591bffcab6911c06786d
+    ports:
+      - "5601:5601"
+    networks:
+      - llm-es-network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Arize Phoenix Service
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: llm-es-phoenix
+    environment:
+      - PHOENIX_HOST=0.0.0.0
+      - PHOENIX_PORT=6006
+      - PHOENIX_GRPC_PORT=4317
+    ports:
+      - "6006:6006"
+      - "4317:4317"
+    networks:
+      - llm-es-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6006/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - phoenix_data:/phoenix/data
+
+  # LLM ES Agent Service
+  llm-es-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-es-agent-app
+    environment:
+      - ES_HOST=http://elasticsearch:9200
+      - PHOENIX_ENDPOINT=http://phoenix:6006
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    networks:
+      - llm-es-network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      phoenix:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import sys; sys.exit(0)'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# Networks
+networks:
+  llm-es-network:
+    driver: bridge
+    name: llm-es-network
+
+# Volumes
+volumes:
+  elasticsearch_data:
+    driver: local
+    name: llm-es-elasticsearch-data
+  phoenix_data:
+    driver: local
+    name: llm-es-phoenix-data

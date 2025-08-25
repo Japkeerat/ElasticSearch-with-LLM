@@ -1,0 +1,35 @@
+# Virtual Environment
+.venv
+
+# IDE
+.idea
+.vscode
+
+# Logs
+logs/
+*.log
+
+# Cache
+**/__pycache__
+**/*.pyc
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+test_*.py
+
+# Other common files to exclude from Docker context
+.DS_Store
+*.swp
+*.swo
+*~

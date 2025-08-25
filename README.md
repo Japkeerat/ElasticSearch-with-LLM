@@ -1,40 +1,284 @@
-# Demo Project for Agentic RAG
+# LLM ElasticSearch Agent
 
-The source code in this repository is just a proof of concept of the idea that an approach like this would work.
+An intelligent agent system that combines Large Language Models (LLMs) with ElasticSearch to provide natural language querying capabilities for your data. The system uses Google's Agent Development Kit (ADK) and includes comprehensive observability through Arize Phoenix.
 
-The idea is to build an Agentic RAG workflow that when used could help in generating query responses in Natural Language.
+## 🚀 What It Does
 
-## What does the POC do?
+This application creates an intelligent agent that can:
 
-In the POC codebase, we do not incorporate agents. We perform the work an agent should do everytime the query is made.
-This means, if the user query is not relevant to ElasticSearch, it still would run the process of generating an ElasticSearch query and executing it against the ElasticSearch.
+- **Natural Language Queries**: Ask questions about your data in plain English
+- **ElasticSearch Integration**: Automatically discovers indices, analyzes schemas, and executes queries
+- **Multi-Agent Architecture**: Uses specialized agents for different tasks (orchestration, query generation, execution)
+- **Observability**: Full tracing and monitoring through Arize Phoenix
+- **Interactive Terminal**: Real-time conversation interface with the agent
+- **Security**: Read-only operations to protect your data
 
-Further, there is no guardrails in the POC version which means it will not be checking if the query is only going to perform read-only operations. We cannot afford a fully-automated pipeline to perform write/delete operations.
+### Example Interactions
 
-Lastly, the user queries are expected to be repetitive for a particular ElasticSearch schema. This means, having a record of all user queries, corresponding ElasticSearch queries would help in speeding up Agent runtimes by preventing Agent to be executed everytime.
+```
+You: How many users are in the system?
+Agent: [Discovers indices, finds user data, executes count query, returns results]
 
-**Modules**
+You: Show me recent error logs from last week
+Agent: [Finds log indices, constructs time-based query, returns formatted results]
 
-1. Fake Data Generator --> Uses Python's Faker library to populate synthetic data in ElasticSearch.
-2. LLM ES Agent --> Allows to use LLMs to interact with the ElasticSearch
+You: What are the top 10 most active users?
+Agent: [Analyzes user activity data, creates aggregation query, presents insights]
+```
 
-## Next steps
+## 🏗️ Architecture
 
-![workflow.png](workflow.png)
+### System Components
 
-In the workflow shown, there are 2 agents being used one after another. These can be clubbed to one agent as well as both will be used in sequence anyways. The only benefit here is if the user request already contains a Query, it would allow us to directly move to Agent-2 in future versions.
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   User Input    │───▶│   Orchestrator  │───▶│  Query Agent    │
+│   (Terminal)    │    │     Agent       │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │                        │
+                                ▼                        ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ Arize Phoenix   │    │ Index Selection │    │ Query Execution │
+│ (Observability) │    │     Agent       │    │     Agent       │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                                        │
+                                                        ▼
+                                              ┌─────────────────┐
+                                              │  ElasticSearch  │
+                                              │    Cluster      │
+                                              └─────────────────┘
+```
 
-`Requires ElasticSearch` decision making can be done with a small classification model that can help in determining if the request should be sent to an Agent or directly to LLM. We can ofcourse use LLMs with native tool calling abilities which could determine if they would benefit from using Agents. But for production ready systems, I generally recommend a decision maker which we can independently debug and test.
+### Agent Hierarchy
 
-For `Agent-1`, we first perform a Vector DB lookup which helps in identifying if the user query is already similar to any existing query we have used `Agent-1` earlier for. If there is a match, we can then get the corresponding query that previous LLM wrote directly from the database. Otherwise, we can use an LLM (from testing, OpenAI LLMs perform better on ElasticSearch query writing in comparison to Open Source models like LLaMA) to generate queries and accordingly update Vector database with the response.
+1. **Orchestrator Agent**: Main coordinator that routes queries and manages workflow
+2. **Query Generation Agent**: Converts natural language to ElasticSearch queries
+3. **Index Selection Agent**: Discovers and selects appropriate indices
+4. **Query Execution Agent**: Safely executes read-only operations
+5. **Pipeline Agent**: Handles complex multi-step operations
 
-For `Agent-2` we first have a guardrail that validates the input query for ElasticSearch is a read-only operation. If not, we do not proceed with the request. If it is read-only, we execute it to get a response from ElasticSearch.
+### Technology Stack
 
-Lastly, we use the input query and Agent-2 response to generate the final output in natural language.
+- **Python 3.12**: Core application runtime
+- **Google ADK**: Agent framework and orchestration
+- **ElasticSearch 8.11**: Data storage and search engine
+- **OpenAI GPT-4**: Language model for natural language processing
+- **LiteLLM**: Multi-provider LLM integration
+- **Arize Phoenix**: Observability and tracing
+- **Kibana**: ElasticSearch data visualization
+- **Docker & Docker Compose**: Containerization and orchestration
 
+## 🛠️ Setup & Execution
 
-# Tying to InsightSoftware
+### Prerequisites
 
-This can be used in scenarios where Audit Logs are saved in ElasticSearch and can help in determining the user level accesses quickly.
+- Docker and Docker Compose installed
+- OpenAI API key
+- At least 4GB RAM available for ElasticSearch
 
-After introducing additional agents (for example, getting date) can help in answering more sophisticated queries (for example, which user with admin permissions modified entity 123 yesterday?) without the user having to know any knowledge of ElasticSearch by themselves.
+### Quick Start
+
+1. **Clone and navigate to the project:**
+   ```bash
+   git clone <repository-url>
+   cd ElasticSearch-with-LLM
+   ```
+
+2. **Set up environment variables:**
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your OpenAI API key
+   ```
+
+3. **Start all services:**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Wait for services to be ready (check health):**
+   ```bash
+   docker-compose ps
+   ```
+
+5. **Connect to the interactive agent:**
+   ```bash
+   docker-compose logs -f llm-es-agent
+   ```
+
+### Service Access Points
+
+- **LLM Agent**: Interactive terminal via `docker-compose logs -f llm-es-agent`
+- **Kibana Dashboard**: http://localhost:5601
+- **Phoenix Observability**: http://localhost:6006
+- **ElasticSearch API**: http://localhost:9200
+
+### Environment Configuration
+
+Edit your `.env` file with the following required variables:
+
+```bash
+# Required: OpenAI API Key
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Auto-configured by Docker Compose
+ES_HOST=http://elasticsearch:9200
+PHOENIX_ENDPOINT=http://phoenix:6006
+
+# Optional customization
+LOG_LEVEL=INFO
+APP_NAME=llm_es_agent
+USER_ID=user_001
+```
+
+## ⚙️ Configuration
+
+The system supports configurable models for each agent through a simple `config.yaml` file. This allows you to optimize costs and performance by using different models for different tasks.
+
+### Model Configuration
+
+Create or edit `config.yaml` in the project root:
+
+```yaml
+agents:
+  orchestrator: "openai/gpt-4o-mini"
+  elasticsearch: "openai/gpt-4o-mini"
+  index_selection: "openai/gpt-3.5-turbo"  # Lighter model for simple tasks
+  query_generation: "openai/gpt-4o-mini"
+  query_execution: "openai/gpt-4o-mini"
+```
+
+### Supported Models
+- `openai/gpt-4o` - Most capable, highest cost
+- `openai/gpt-4o-mini` - Good balance (default)
+- `openai/gpt-3.5-turbo` - Fastest, lowest cost
+- Any model supported by LiteLLM
+
+### Testing Configuration
+```bash
+python test_config_system.py
+```
+
+For detailed configuration options, see [CONFIGURATION_GUIDE.md](CONFIGURATION_GUIDE.md).
+
+## 📊 Usage Examples
+
+### Basic Data Queries
+```
+You: List all available indices
+You: How many documents are in the user index?
+You: Show me the schema of the logs index
+```
+
+### Complex Analytics
+```
+You: What are the most common error types in the last 24 hours?
+You: Show me user activity patterns by hour
+You: Find all failed login attempts from last week
+```
+
+### General Questions
+```
+You: How does ElasticSearch work?
+You: Explain the difference between a query and a filter
+You: What is this agent capable of?
+```
+
+## 🔧 Development
+
+### Local Development (without Docker)
+
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Set up local ElasticSearch and Phoenix**
+
+3. **Run the application:**
+   ```bash
+   python main.py
+   ```
+
+### Project Structure
+
+```
+├── llm_es_agent/           # Core agent modules
+│   ├── agents/             # Individual agent implementations
+│   ├── tools/              # ElasticSearch tools and utilities
+│   ├── config.py           # Configuration management system
+│   ├── orchestrator.py     # Main orchestrator logic
+│   └── pipeline_agent.py   # Pipeline management
+├── prompts/                # Agent instruction templates
+├── config.yaml             # Agent model configuration
+├── main.py                 # Application entry point
+├── requirements.txt        # Python dependencies
+├── test_config_system.py   # Configuration system tests
+├── CONFIGURATION_GUIDE.md  # Detailed configuration guide
+├── Dockerfile             # Container configuration
+├── docker-compose.yml     # Multi-service orchestration
+└── .env.example          # Environment template
+```
+
+## 🔒 Security Features
+
+- **Read-Only Operations**: Only search, aggregation, and discovery operations allowed
+- **Query Validation**: All queries validated before execution
+- **No Write Access**: Create, update, delete operations are blocked
+- **Containerized**: Isolated execution environment
+- **Non-Root User**: Application runs with limited privileges
+
+## 📈 Monitoring & Observability
+
+### Arize Phoenix Dashboard
+- Real-time trace visualization
+- Performance metrics
+- Agent interaction flows
+- Error tracking and debugging
+
+### Logging
+- Structured logging to files and console
+- Configurable log levels
+- Request/response tracking
+- Error details and stack traces
+
+## 🛑 Troubleshooting
+
+### Common Issues
+
+1. **Services not starting**: Check Docker resources and port availability
+2. **ElasticSearch connection failed**: Verify ES_HOST environment variable
+3. **OpenAI API errors**: Check API key validity and rate limits
+4. **Phoenix not accessible**: Ensure port 6006 is available
+
+### Useful Commands
+
+```bash
+# Check service status
+docker-compose ps
+
+# View logs for specific service
+docker-compose logs elasticsearch
+docker-compose logs llm-es-agent
+
+# Restart services
+docker-compose restart
+
+# Clean restart (removes data)
+docker-compose down -v && docker-compose up -d
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📄 License
+
+[Add your license information here]
+
+---
+
+**Need Help?** Check the logs, Phoenix dashboard, or open an issue for support.
