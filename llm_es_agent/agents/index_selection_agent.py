@@ -98,16 +98,13 @@ class IndexSelectionAgent:
         # Load instructions from prompt file
         instructions = self._get_agent_instructions()
 
-        # FIXED: Remove output_schema to allow natural language responses
-        # The agent will still save structured data to session state via tools/callbacks
         agent = LlmAgent(
             name="IndexSelectionAgent",
             model=LiteLlm("openai/gpt-4o-mini"),
             description="Specialized agent for selecting the most appropriate Elasticsearch index for a user query",
             instruction=instructions,
             tools=[list_indices_tool, get_mapping_tool, user_selection_tool],
-            # Removed output_schema - let the agent respond naturally
-            output_key="index_selection_result",  # Still save the response to session state
+            output_key="index_selection_result", 
         )
 
         return agent

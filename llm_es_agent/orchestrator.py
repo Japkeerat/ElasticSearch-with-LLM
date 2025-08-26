@@ -16,7 +16,7 @@ class OrchestratorAgent:
             model=LiteLlm("openai/gpt-4o-mini"),
             description="Root user requests to appropriate agent if a specialised agent is needed. Else, answers the query directly",
             instruction=self.__get_orchestrator_instructions(),
-            sub_agents=[es_agent.agent],  # Add the ES agent as a sub-agent
+            sub_agents=[es_agent.agent], 
         )
 
     def __get_orchestrator_instructions(self) -> str:

@@ -430,7 +430,6 @@ def main():
         logger = setup_logging()
         logger.info("Starting LLM ES Agent application")
 
-        # Create application span if tracing is enabled
         if tracer:
             with tracer.start_as_current_span("llm_es_agent_application") as app_span:
                 app_span.set_attribute("app.version", "1.0.0")
@@ -439,7 +438,6 @@ def main():
         else:
             await run_application_logic(logger, None)
 
-    # Run the async main function - THIS WAS THE MISSING PIECE!
     asyncio.run(async_main())
 
 

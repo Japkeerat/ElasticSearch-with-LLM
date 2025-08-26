@@ -22,7 +22,6 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Phoenix imports for observability (optional)
 try:
     from opentelemetry import trace as trace_api
     from opentelemetry.sdk import trace as trace_sdk
@@ -464,7 +463,6 @@ def render_main_interface(app):
     if submit_button and user_query.strip():
         with st.spinner("🤔 Processing your query..."):
             try:
-                # Use asyncio.run for better async handling in Streamlit
                 result = asyncio.run(
                     app.process_query(user_query, st.session_state.user_id)
                 )

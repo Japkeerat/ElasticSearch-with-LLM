@@ -57,10 +57,8 @@ class QueryExecutionAgent:
         Returns:
             Configured LlmAgent instance
         """
-        # Create tools - FunctionTool automatically extracts name and description from function
         execute_query_tool = FunctionTool(self.execution_tools.execute_query)
         
-        # Add session state management tools
         save_execution_data_tool = FunctionTool(save_execution_results_data)
         get_session_data_tool = FunctionTool(get_session_data)
         get_user_query_tool = FunctionTool(get_user_query)
@@ -68,7 +66,6 @@ class QueryExecutionAgent:
         # Load instructions from prompt file
         instructions = self._get_agent_instructions()
 
-        # FIXED: Remove output_schema to allow natural language responses
         agent = LlmAgent(
             name="QueryExecutionAgent",
             model=LiteLlm("openai/gpt-4o-mini"),
@@ -80,7 +77,6 @@ class QueryExecutionAgent:
                 get_session_data_tool,
                 get_user_query_tool
             ],
-            # Removed output_schema - this agent provides the final natural language response
             output_key="query_execution_result",
         )
 

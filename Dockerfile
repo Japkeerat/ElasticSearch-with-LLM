@@ -46,5 +46,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import sys; sys.exit(0)"
 
 # Default command runs Streamlit interface
-# Can be overridden in docker-compose or docker run
 CMD ["python", "app.py", "--interface", "web", "--port", "8501"]

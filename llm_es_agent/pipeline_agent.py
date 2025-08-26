@@ -1,8 +1,10 @@
 import logging
+from pathlib import Path
 from typing import Dict, Any, Optional
 
 from pydantic import BaseModel, Field
-from google.adk.agents import SequentialAgent
+from google.adk.agents import SequentialAgent, LlmAgent
+from google.adk.models.lite_llm import LiteLlm
 
 from llm_es_agent.agents.index_selection_agent import create_index_selection_agent
 from llm_es_agent.agents.query_generation_agent import create_query_generation_agent
@@ -51,27 +53,83 @@ class ElasticsearchPipelineAgent:
 
     def _create_agent(self) -> SequentialAgent:
         """
-        Create the main pipeline agent using SequentialAgent.
+        Create the main pipeline agent using SequentialAgent with explicit configuration.
 
         Returns:
             Configured SequentialAgent instance
         """
-        # Create the sequential agent that runs agents in pipeline order
-        # Note: SequentialAgent expects 'sub_agents' parameter, not 'agents'
-        # Note: SequentialAgent does NOT support 'output_schema' or 'output_key' parameters
+        
+        # CRITICAL FIX: Ensure agents are configured properly for sequential execution
+        # Remove any output_key from individual agents that might interfere with pipeline flow
+        index_agent = self.index_selection_agent.agent
+        query_agent = self.query_generation_agent.agent  
+        execution_agent = self.query_execution_agent.agent
+        
+        # Clear output_key if set to prevent early pipeline termination
+        if hasattr(index_agent, 'output_key'):
+            index_agent.output_key = None
+        if hasattr(query_agent, 'output_key'):
+            query_agent.output_key = None
+        # Only the final agent should have output_key
+        if hasattr(execution_agent, 'output_key'):
+            execution_agent.output_key = "final_pipeline_result"
+
         agent = SequentialAgent(
             name="ElasticsearchPipelineAgent",
             description="Orchestrates the complete Elasticsearch query pipeline from natural language to results",
-            sub_agents=[  # Changed from 'agents' to 'sub_agents'
-                self.index_selection_agent.agent,
-                self.query_generation_agent.agent,
-                self.query_execution_agent.agent,
+            sub_agents=[
+                index_agent,
+                query_agent,
+                execution_agent,
             ],
-            # Removed output_schema and output_key as they're not supported by SequentialAgent
-            # The individual LlmAgents in the pipeline will handle their own output_schema and output_key
         )
 
         return agent
+
+
+# Alternative approach: Create a wrapper agent that ensures all steps execute
+class ElasticsearchPipelineAgentWrapper:
+    """Alternative implementation using a wrapper approach"""
+    
+    def __init__(self):
+        """Initialize with explicit pipeline control"""
+        self.index_selection_agent = create_index_selection_agent()
+        self.query_generation_agent = create_query_generation_agent()
+        self.query_execution_agent = create_query_execution_agent()
+        
+        # Create wrapper agent that ensures full pipeline execution
+        self.agent = self._create_wrapper_agent()
+    
+    def _create_wrapper_agent(self) -> LlmAgent:
+        """Create a wrapper agent that explicitly manages the pipeline"""
+        
+        from pathlib import Path
+        
+        # Load pipeline orchestration instructions
+        instructions = self._get_pipeline_instructions()
+        
+        # Create wrapper agent with all three agents as sub-agents
+        agent = LlmAgent(
+            name="ElasticsearchPipelineAgent",
+            model=LiteLlm("openai/gpt-4o-mini"),
+            description="Orchestrates the complete Elasticsearch query pipeline from natural language to results",
+            instruction=instructions,
+            sub_agents=[
+                self.index_selection_agent.agent,
+                self.query_generation_agent.agent, 
+                self.query_execution_agent.agent
+            ],
+            output_key="final_pipeline_result"
+        )
+        
+        return agent
+    
+    def _get_pipeline_instructions(self) -> str:
+        """Get pipeline orchestration instructions"""
+        file = Path(__file__).parent.parent / "prompts" / "elasticsearch_pipeline_agent.txt"
+        with open(file, "r") as f:
+            instructions = f.read()
+        return instructions
 
 
 def create_elasticsearch_pipeline_agent() -> ElasticsearchPipelineAgent:
@@ -84,13 +142,26 @@ def create_elasticsearch_pipeline_agent() -> ElasticsearchPipelineAgent:
     return ElasticsearchPipelineAgent()
 
 
-# Backward compatibility - replace the old ES agent
-def create_elasticsearch_agent() -> ElasticsearchPipelineAgent:
+def create_elasticsearch_pipeline_agent_wrapper() -> ElasticsearchPipelineAgentWrapper:
     """
-    Factory function for backward compatibility.
-    Creates the new pipeline agent but maintains the same interface.
+    Factory function to create the wrapper-based pipeline agent.
+    
+    This is an alternative approach that uses explicit LLM-driven orchestration
+    instead of SequentialAgent to ensure all stages execute.
 
     Returns:
-        Configured ElasticsearchPipelineAgent instance
+        Configured ElasticsearchPipelineAgentWrapper instance
     """
-    return create_elasticsearch_pipeline_agent()
+    return ElasticsearchPipelineAgentWrapper()
+
+
+# Backward compatibility - try the wrapper approach first
+def create_elasticsearch_agent() -> ElasticsearchPipelineAgentWrapper:
+    """
+    Factory function for backward compatibility.
+    Uses the wrapper approach for more reliable pipeline execution.
+
+    Returns:
+        Configured ElasticsearchPipelineAgentWrapper instance
+    """
+    return create_elasticsearch_pipeline_agent_wrapper()

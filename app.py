@@ -20,7 +20,6 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Phoenix imports for observability (optional)
 try:
     import phoenix as px
     from opentelemetry import trace as trace_api

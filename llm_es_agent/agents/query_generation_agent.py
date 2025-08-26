@@ -102,10 +102,8 @@ class QueryGenerationAgent:
         get_session_data_tool = FunctionTool(get_session_data)
         get_user_query_tool = FunctionTool(get_user_query)
 
-        # Load instructions from prompt file
         instructions = self._get_agent_instructions()
 
-        # FIXED: Remove output_schema to allow natural language responses
         agent = LlmAgent(
             name="QueryGenerationAgent",
             model=LiteLlm("openai/gpt-4o-mini"),
@@ -118,7 +116,6 @@ class QueryGenerationAgent:
                 get_session_data_tool,
                 get_user_query_tool
             ],
-            # Removed output_schema - let the agent respond naturally
             output_key="query_generation_result",
         )
 

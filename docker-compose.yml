@@ -105,9 +105,6 @@ services:
       "--server.enableCORS", "false"
     ]
     
-    # OPTION 2: Alternative - use the Python app (uncomment if needed)
-    # command: ["python", "app.py", "--interface", "web", "--port", "8501"]
-    
     stdin_open: true
     tty: true
     restart: unless-stopped
