@@ -132,15 +132,8 @@ class UnifiedAgentApp:
             session = await self.session_service.create_session(
                 app_name="llm_es_agent_unified",
                 user_id=user_id,
-                session_id=session_id
-            )
-            
-            await self.session_service.set_session_state(
-                app_name="llm_es_agent_unified",
-                user_id=user_id,
                 session_id=session_id,
-                key="original_user_query",
-                value=query,
+                state={"original_user_query": query}
             )
             
             from google.genai import types
@@ -187,7 +180,9 @@ class UnifiedAgentApp:
     def run_terminal_interface(self, enable_tracing: bool = True):
         """Run the terminal interface."""
         if enable_tracing:
-            self._setup_phoenix_tracing()
+            import os
+            phoenix_endpoint = os.getenv("PHOENIX_ENDPOINT", "http://localhost:6006")
+            self._setup_phoenix_tracing(phoenix_endpoint)
         
         if not self._initialize_agent():
             sys.exit(1)
@@ -218,7 +213,9 @@ import streamlit as st
 if "app_instance" not in st.session_state:
     st.session_state.app_instance = UnifiedAgentApp()
     if {enable_tracing}:
-        st.session_state.app_instance._setup_phoenix_tracing()
+        import os
+        phoenix_endpoint = os.getenv("PHOENIX_ENDPOINT", "http://localhost:6006")
+        st.session_state.app_instance._setup_phoenix_tracing(phoenix_endpoint)
     if not st.session_state.app_instance._initialize_agent():
         st.error("Failed to initialize agent")
         st.stop()
