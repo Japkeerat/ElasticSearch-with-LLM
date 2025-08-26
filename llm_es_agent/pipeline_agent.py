@@ -74,49 +74,6 @@ class ElasticsearchPipelineAgent:
         return agent
 
 
-# Alternative approach: Create a wrapper agent that ensures all steps execute
-class ElasticsearchPipelineAgentWrapper:
-    """Alternative implementation using a wrapper approach"""
-    
-    def __init__(self):
-        """Initialize with explicit pipeline control"""
-        self.index_selection_agent = create_index_selection_agent()
-        self.query_generation_agent = create_query_generation_agent()
-        self.query_execution_agent = create_query_execution_agent()
-        
-        # Create wrapper agent that ensures full pipeline execution
-        self.agent = self._create_wrapper_agent()
-    
-    def _create_wrapper_agent(self) -> LlmAgent:
-        """Create a wrapper agent that explicitly manages the pipeline"""
-        
-        # Load pipeline orchestration instructions
-        instructions = self._get_pipeline_instructions()
-        
-        # Create wrapper agent with all three agents as sub-agents
-        agent = LlmAgent(
-            name="ElasticsearchPipelineAgent",
-            model=LiteLlm("openai/gpt-4o-mini"),
-            description="Orchestrates the complete Elasticsearch query pipeline from natural language to results",
-            instruction=instructions,
-            sub_agents=[
-                self.index_selection_agent.agent,
-                self.query_generation_agent.agent, 
-                self.query_execution_agent.agent
-            ],
-            output_key="final_pipeline_result"
-        )
-        
-        return agent
-    
-    def _get_pipeline_instructions(self) -> str:
-        """Get pipeline orchestration instructions"""
-        file = Path(__file__).parent.parent / "prompts" / "elasticsearch_pipeline_agent.txt"
-        with open(file, "r") as f:
-            instructions = f.read()
-        return instructions
-
-
 def create_elasticsearch_pipeline_agent() -> ElasticsearchPipelineAgent:
     """
     Factory function to create an Elasticsearch Pipeline agent.
@@ -127,21 +84,8 @@ def create_elasticsearch_pipeline_agent() -> ElasticsearchPipelineAgent:
     return ElasticsearchPipelineAgent()
 
 
-def create_elasticsearch_pipeline_agent_wrapper() -> ElasticsearchPipelineAgentWrapper:
-    """
-    Factory function to create the wrapper-based pipeline agent.
-    
-    This is an alternative approach that uses explicit LLM-driven orchestration
-    instead of SequentialAgent to ensure all stages execute.
-
-    Returns:
-        Configured ElasticsearchPipelineAgentWrapper instance
-    """
-    return ElasticsearchPipelineAgentWrapper()
-
-
 # Use wrapper approach for reliable pipeline execution
-def create_elasticsearch_agent() -> ElasticsearchPipelineAgentWrapper:
+def create_elasticsearch_agent() -> ElasticsearchPipelineAgent:
     """
     Factory function for backward compatibility.
     Uses the wrapper approach for reliable pipeline execution.
@@ -149,4 +93,4 @@ def create_elasticsearch_agent() -> ElasticsearchPipelineAgentWrapper:
     Returns:
         Configured ElasticsearchPipelineAgentWrapper instance
     """
-    return create_elasticsearch_pipeline_agent_wrapper()
+    return create_elasticsearch_pipeline_agent()
