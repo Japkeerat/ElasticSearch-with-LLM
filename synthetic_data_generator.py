@@ -355,5 +355,4 @@ def create_orders_index(es_url, fake, count=80):
 if __name__ == "__main__":
     success = generate_and_insert_data()
     if not success:
-        print("\n🔧 Try running the debug script first:")
-        print("python debug_elasticsearch_data.py")
+        print("\n🔧 Check Elasticsearch connection and try again.")

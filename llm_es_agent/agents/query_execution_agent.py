@@ -109,11 +109,3 @@ def create_query_execution_agent() -> QueryExecutionAgent:
     return QueryExecutionAgent()
 
 
-# Example usage and testing
-if __name__ == "__main__":
-    # Set up basic logging for testing
-    logging.basicConfig(level=logging.INFO)
-
-    # Create agent
-    execution_agent = create_query_execution_agent()
-    print("Query Execution Agent created successfully")

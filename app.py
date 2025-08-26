@@ -11,9 +11,11 @@ import asyncio
 import uuid
 import json
 import logging
+import warnings
 from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
+from contextlib import contextmanager
 
 from dotenv import load_dotenv
 
@@ -27,23 +29,28 @@ try:
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
     PHOENIX_AVAILABLE = True
 except ImportError:
     PHOENIX_AVAILABLE = False
 
 from llm_es_agent.orchestrator import create_orchestrator
+from llm_es_agent.tracing_utils import (
+    safe_tracing_context,
+    initialize_safe_tracing,
+)
 
 
 class UnifiedAgentApp:
     """Unified application class for both interfaces."""
-    
+
     def __init__(self):
         self.orchestrator = None
         self.runner = None
         self.session_service = None
         self.tracer = None
         self.logger = self._setup_logging()
-    
+
     def _setup_logging(self, log_level: str = "INFO") -> logging.Logger:
         """Set up logging configuration."""
         root_folder = Path(__file__).parent
@@ -75,32 +82,30 @@ class UnifiedAgentApp:
         logger.addHandler(console_handler)
 
         return logger
-    
-    def _setup_phoenix_tracing(self, phoenix_endpoint: str = "http://localhost:6006") -> bool:
+
+    def _setup_phoenix_tracing(
+        self, phoenix_endpoint: str = "http://localhost:6006"
+    ) -> bool:
         """Set up Phoenix tracing for observability."""
         if not PHOENIX_AVAILABLE:
-            self.logger.warning("Phoenix observability not available (missing dependencies)")
-            return False
-
-        try:
-            resource = Resource.create({"service.name": "llm-es-agent-unified"})
-            tracer_provider = trace_sdk.TracerProvider(resource=resource)
-            trace_api.set_tracer_provider(tracer_provider)
-
-            otlp_exporter = OTLPSpanExporter(
-                endpoint=f"{phoenix_endpoint}/v1/traces", 
-                headers={}
+            self.logger.warning(
+                "Phoenix observability not available (missing dependencies)"
             )
-            tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-            self.tracer = trace_api.get_tracer(__name__)
-            
-            self.logger.info(f"✅ Phoenix tracing initialized - Dashboard: {phoenix_endpoint}")
-            return True
-
-        except Exception as e:
-            self.logger.warning(f"Could not initialize Phoenix tracing: {str(e)}")
             return False
-    
+
+        # Use the centralized safe tracing initialization
+        success = initialize_safe_tracing("llm-es-agent-unified", phoenix_endpoint)
+
+        if success:
+            # Get the tracer for manual instrumentation
+            try:
+                self.tracer = trace_api.get_tracer(__name__)
+            except Exception as e:
+                self.logger.debug(f"Could not get tracer: {e}")
+                self.tracer = None
+
+        return success
+
     def _initialize_agent(self):
         """Initialize the orchestrator agent and ADK components."""
         try:
@@ -124,7 +129,7 @@ class UnifiedAgentApp:
         except Exception as e:
             self.logger.error(f"Failed to initialize agent: {str(e)}", exc_info=True)
             return False
-    
+
     async def process_query(self, query: str, user_id: str) -> Dict[str, Any]:
         """Process user query through the orchestrator agent."""
         try:
@@ -132,81 +137,86 @@ class UnifiedAgentApp:
             session = await self.session_service.create_session(
                 app_name="llm_es_agent_unified",
                 user_id=user_id,
-                session_id=session_id
-            )
-            
-            await self.session_service.set_session_state(
-                app_name="llm_es_agent_unified",
-                user_id=user_id,
                 session_id=session_id,
-                key="original_user_query",
-                value=query,
+                state={"original_user_query": query},
             )
-            
+
             from google.genai import types
+
             content = types.Content(role="user", parts=[types.Part(text=query)])
-            
+
             response_text = "Agent did not produce a final response."
             event_count = 0
             processing_events = []
-            
-            # Process agent events
-            async for event in self.runner.run_async(
-                user_id=user_id, 
-                session_id=session_id, 
-                new_message=content
-            ):
-                event_count += 1
-                processing_events.append({
-                    "event_number": event_count,
-                    "author": event.author,
-                    "timestamp": datetime.now().isoformat()
-                })
-                
-                if event.is_final_response():
-                    if event.content and event.content.parts:
-                        response_text = event.content.parts[0].text
-                    break
-            
+
+            # Process agent events with proper error handling for OpenTelemetry context issues
+            try:
+                with safe_tracing_context():
+                    async for event in self.runner.run_async(
+                        user_id=user_id, session_id=session_id, new_message=content
+                    ):
+                        event_count += 1
+                        processing_events.append(
+                            {
+                                "event_number": event_count,
+                                "author": event.author,
+                                "timestamp": datetime.now().isoformat(),
+                            }
+                        )
+
+                        if event.is_final_response():
+                            if event.content and event.content.parts:
+                                response_text = event.content.parts[0].text
+                            break
+            except GeneratorExit:
+                # Handle generator exit gracefully
+                self.logger.debug("Event generator was closed")
+            except Exception as gen_error:
+                self.logger.error(f"Error in event processing: {gen_error}")
+                # Don't re-raise, let the function continue with partial results
+
             return {
                 "success": True,
                 "response": response_text,
                 "session_id": session_id,
                 "event_count": event_count,
                 "processing_events": processing_events,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
-            
+
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
-    
+
     def run_terminal_interface(self, enable_tracing: bool = True):
         """Run the terminal interface."""
         if enable_tracing:
-            self._setup_phoenix_tracing()
-        
+            import os
+
+            phoenix_endpoint = os.getenv("PHOENIX_ENDPOINT", "http://localhost:6006")
+            self._setup_phoenix_tracing(phoenix_endpoint)
+
         if not self._initialize_agent():
             sys.exit(1)
-        
+
         self._print_terminal_welcome()
-        
+
         # Run the terminal loop
         asyncio.run(self._terminal_loop())
-    
+
     def run_streamlit_interface(self, enable_tracing: bool = True, port: int = 8501):
         """Run the Streamlit interface using subprocess to launch streamlit properly."""
         import subprocess
-        
+
         self.logger.info(f"🌐 Starting Streamlit web interface on port {port}")
-        
+
         # Create a streamlit app file that imports this module
         streamlit_runner_path = Path(__file__).parent / "streamlit_runner.py"
-        
-        streamlit_runner_content = f'''
+
+        streamlit_runner_content = f"""
 import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -218,47 +228,59 @@ import streamlit as st
 if "app_instance" not in st.session_state:
     st.session_state.app_instance = UnifiedAgentApp()
     if {enable_tracing}:
-        st.session_state.app_instance._setup_phoenix_tracing()
+        import os
+        phoenix_endpoint = os.getenv("PHOENIX_ENDPOINT", "http://localhost:6006")
+        st.session_state.app_instance._setup_phoenix_tracing(phoenix_endpoint)
     if not st.session_state.app_instance._initialize_agent():
         st.error("Failed to initialize agent")
         st.stop()
 
 app = st.session_state.app_instance
 app._run_streamlit_app()
-'''
-        
+"""
+
         # Write the runner file
-        with open(streamlit_runner_path, 'w') as f:
+        with open(streamlit_runner_path, "w") as f:
             f.write(streamlit_runner_content)
-        
+
         # Launch Streamlit using subprocess
         try:
             cmd = [
-                sys.executable, "-m", "streamlit", "run", 
+                sys.executable,
+                "-m",
+                "streamlit",
+                "run",
                 str(streamlit_runner_path),
-                "--server.port", str(port),
-                "--server.address", "0.0.0.0",
-                "--server.headless", "true",
-                "--browser.gatherUsageStats", "false",
-                "--server.enableCORS", "false"
+                "--server.port",
+                str(port),
+                "--server.address",
+                "0.0.0.0",
+                "--server.headless",
+                "true",
+                "--browser.gatherUsageStats",
+                "false",
+                "--server.enableCORS",
+                "false",
             ]
-            
+
             self.logger.info(f"Executing: {' '.join(cmd)}")
-            
+
             # Use exec to replace the current process (important for Docker)
             os.execvp(sys.executable, cmd)
-            
+
         except Exception as e:
             self.logger.error(f"Failed to start Streamlit: {e}")
             sys.exit(1)
-    
+
     def _print_terminal_welcome(self):
         """Print terminal welcome message."""
         print("\n" + "=" * 60)
         print("  LLM ElasticSearch Agent - Interactive Terminal")
         print("=" * 60)
         print("Welcome to the LLM ES Agent!")
-        print("This agent can help you with ElasticSearch queries and general questions.")
+        print(
+            "This agent can help you with ElasticSearch queries and general questions."
+        )
         print("\nCommands:")
         print("  • Type your query and press Enter")
         print("  • Type 'quit', 'exit', or 'q' to exit")
@@ -272,46 +294,46 @@ app._run_streamlit_app()
             print("\n⚠️  Phoenix observability not available")
 
         print("=" * 60 + "\n")
-    
+
     async def _terminal_loop(self):
         """Main terminal interaction loop."""
         USER_ID = "terminal_user_001"
         query_count = 0
-        
+
         while True:
             try:
                 user_input = input("You: ").strip()
-                
+
                 if not user_input:
                     continue
-                
+
                 if user_input.lower() in ["quit", "exit", "q"]:
                     print("Goodbye!")
                     break
                 elif user_input.lower() in ["help", "h"]:
                     self._print_help()
                     continue
-                
+
                 query_count += 1
                 self.logger.info(f"Processing query {query_count}: {user_input}")
-                
+
                 # Process query
                 result = await self.process_query(user_input, USER_ID)
-                
+
                 if result["success"]:
                     print(f"\nAgent: {result['response']}")
                 else:
                     print(f"\nError: {result['error']}")
-                
+
                 print("-" * 50)
-                
+
             except (EOFError, KeyboardInterrupt):
                 print("\nGoodbye!")
                 break
             except Exception as e:
                 self.logger.error(f"Unexpected error: {str(e)}", exc_info=True)
                 print(f"An unexpected error occurred: {str(e)}")
-    
+
     def _print_help(self):
         """Print help message."""
         print("\n" + "-" * 50)
@@ -328,21 +350,22 @@ app._run_streamlit_app()
         print("  • How does this agent work?")
         print("  • Explain full-text search")
         print("-" * 50 + "\n")
-    
+
     def _run_streamlit_app(self):
         """Run the Streamlit interface."""
         import streamlit as st
-        
+
         # Configure Streamlit page
         st.set_page_config(
             page_title="LLM ElasticSearch Agent",
             page_icon="🔍",
             layout="wide",
-            initial_sidebar_state="expanded"
+            initial_sidebar_state="expanded",
         )
-        
+
         # Custom CSS
-        st.markdown("""
+        st.markdown(
+            """
         <style>
             .main-header {
                 font-size: 2.5rem;
@@ -383,34 +406,36 @@ app._run_streamlit_app()
                 margin: 1rem 0;
             }
         </style>
-        """, unsafe_allow_html=True)
-        
+        """,
+            unsafe_allow_html=True,
+        )
+
         # Initialize session state
-        if 'chat_history' not in st.session_state:
+        if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
-        
-        if 'user_id' not in st.session_state:
+
+        if "user_id" not in st.session_state:
             st.session_state.user_id = f"streamlit_user_{uuid.uuid4().hex[:8]}"
-        
+
         # Sidebar
         self._render_sidebar()
-        
+
         # Main interface
         self._render_main_interface()
-    
+
     def _render_sidebar(self):
         """Render the Streamlit sidebar."""
         import streamlit as st
-        
+
         st.sidebar.markdown("## 🔧 Configuration")
-        
+
         # User ID
         st.session_state.user_id = st.sidebar.text_input(
-            "User ID", 
+            "User ID",
             value=st.session_state.user_id,
-            help="Unique identifier for this session"
+            help="Unique identifier for this session",
         )
-        
+
         # Service links
         st.sidebar.markdown("---")
         st.sidebar.markdown("## 🔗 Service Links")
@@ -418,51 +443,55 @@ app._run_streamlit_app()
             st.sidebar.markdown("🔍 [Phoenix Dashboard](http://0.0.0.0:6006)")
         st.sidebar.markdown("📊 [Kibana Dashboard](http://0.0.0.0:5601)")
         st.sidebar.markdown("🔌 [ElasticSearch API](http://0.0.0.0:9200)")
-        
+
         # Example queries
         st.sidebar.markdown("---")
         st.sidebar.markdown("## 💡 Example Queries")
-        
+
         example_queries = [
             "How many users are in the system?",
             "Show me recent error logs",
             "What are the top 10 most active users?",
             "Find all records from last week",
             "What is ElasticSearch?",
-            "How does this agent work?"
+            "How does this agent work?",
         ]
-        
+
         for i, query in enumerate(example_queries):
             if st.sidebar.button(f"📝 {query}", key=f"example_{i}"):
                 st.session_state.example_query = query
-        
+
         # Clear chat history
         if st.sidebar.button("🗑️ Clear Chat History", type="secondary"):
             st.session_state.chat_history = []
             st.rerun()
-    
+
     def _render_main_interface(self):
         """Render the main Streamlit interface."""
         import streamlit as st
-        
-        st.markdown('<h1 class="main-header">🔍 LLM ElasticSearch Agent</h1>', unsafe_allow_html=True)
-        
+
+        st.markdown(
+            '<h1 class="main-header">🔍 LLM ElasticSearch Agent</h1>',
+            unsafe_allow_html=True,
+        )
+
         # System status
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             st.metric("Chat Sessions", len(st.session_state.chat_history))
-        
+
         with col2:
             agent_status = "✅ Ready" if self.orchestrator else "❌ Not Ready"
             st.metric("Agent Status", agent_status)
-        
+
         with col3:
             tracing_status = "✅ Enabled" if self.tracer else "❌ Disabled"
             st.metric("Tracing", tracing_status)
-        
+
         # Info box
-        st.markdown("""
+        st.markdown(
+            """
         <div class="info-box">
             <strong>🚀 Welcome to the LLM ElasticSearch Agent!</strong><br>
             • Ask questions about your ElasticSearch data in natural language<br>
@@ -470,43 +499,54 @@ app._run_streamlit_app()
             • All operations are read-only for security<br>
             • Use the sidebar for example queries and configuration
         </div>
-        """, unsafe_allow_html=True)
-        
+        """,
+            unsafe_allow_html=True,
+        )
+
         # Chat history
         for i, chat_item in enumerate(st.session_state.chat_history):
             # User message
-            st.markdown(f"""
+            st.markdown(
+                f"""
             <div class="user-message">
                 <strong>👤 You ({chat_item['timestamp'][:19]}):</strong><br>
                 {chat_item['query']}
             </div>
-            """, unsafe_allow_html=True)
-            
+            """,
+                unsafe_allow_html=True,
+            )
+
             # Agent response
-            if chat_item['success']:
-                st.markdown(f"""
+            if chat_item["success"]:
+                st.markdown(
+                    f"""
                 <div class="agent-message">
                     <strong>🤖 Agent:</strong><br>
                     {chat_item['response']}
                 </div>
-                """, unsafe_allow_html=True)
+                """,
+                    unsafe_allow_html=True,
+                )
             else:
-                st.markdown(f"""
+                st.markdown(
+                    f"""
                 <div class="error-message">
                     <strong>❌ Error:</strong><br>
                     {chat_item['error']}
                 </div>
-                """, unsafe_allow_html=True)
-        
+                """,
+                    unsafe_allow_html=True,
+                )
+
         # Query input
         st.markdown("---")
-        
+
         # Handle example query selection
         initial_query = ""
-        if 'example_query' in st.session_state:
+        if "example_query" in st.session_state:
             initial_query = st.session_state.example_query
             del st.session_state.example_query
-        
+
         # Input form
         with st.form(key="query_form", clear_on_submit=True):
             user_query = st.text_area(
@@ -514,33 +554,33 @@ app._run_streamlit_app()
                 value=initial_query,
                 height=100,
                 placeholder="Ask me about your ElasticSearch data or general questions...",
-                help="Enter your question and press Ctrl+Enter or click Submit"
+                help="Enter your question and press Ctrl+Enter or click Submit",
             )
-            
+
             submit_button = st.form_submit_button("🚀 Submit", type="primary")
-        
+
         # Process query
         if submit_button and user_query.strip():
             with st.spinner("🤔 Processing your query..."):
                 # Run the async query processing
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                
+
                 try:
                     result = loop.run_until_complete(
                         self.process_query(user_query, st.session_state.user_id)
                     )
-                    
+
                     # Add to chat history
                     chat_entry = {
-                        'query': user_query,
-                        'timestamp': datetime.now().isoformat(),
-                        **result
+                        "query": user_query,
+                        "timestamp": datetime.now().isoformat(),
+                        **result,
                     }
-                    
+
                     st.session_state.chat_history.append(chat_entry)
                     st.rerun()
-                    
+
                 finally:
                     loop.close()
 
@@ -558,53 +598,53 @@ Examples:
   python app.py --no-tracing      # Disable Phoenix tracing
   
 Web interface will be available at: http://localhost:8501
-        """
+        """,
     )
-    
+
     parser.add_argument(
-        "--interface", "-i",
+        "--interface",
+        "-i",
         choices=["web", "terminal", "streamlit", "cli"],
         default="web",
-        help="Interface to run (default: web)"
+        help="Interface to run (default: web)",
     )
-    
+
     parser.add_argument(
-        "--no-tracing",
-        action="store_true",
-        help="Disable Phoenix tracing"
+        "--no-tracing", action="store_true", help="Disable Phoenix tracing"
     )
-    
+
     parser.add_argument(
-        "--port", "-p",
+        "--port",
+        "-p",
         type=int,
         default=8501,
-        help="Port for Streamlit interface (default: 8501)"
+        help="Port for Streamlit interface (default: 8501)",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Create unified app instance
     app = UnifiedAgentApp()
-    
+
     # Determine tracing setting
     enable_tracing = not args.no_tracing
-    
+
     # Run appropriate interface
     interface = args.interface.lower()
-    
+
     if interface in ["web", "streamlit"]:
         print(f"🌐 Starting Streamlit web interface on port {args.port}")
         print(f"🔍 Tracing: {'Enabled' if enable_tracing else 'Disabled'}")
         print(f"📱 Visit: http://localhost:{args.port}")
-        
+
         # Run Streamlit using proper method
         app.run_streamlit_interface(enable_tracing=enable_tracing, port=args.port)
-        
+
     elif interface in ["terminal", "cli"]:
         print("💻 Starting terminal interface")
         print(f"🔍 Tracing: {'Enabled' if enable_tracing else 'Disabled'}")
         app.run_terminal_interface(enable_tracing=enable_tracing)
-    
+
     else:
         parser.error(f"Unknown interface: {interface}")
 

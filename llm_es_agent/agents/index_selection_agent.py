@@ -136,26 +136,3 @@ def create_index_selection_agent() -> IndexSelectionAgent:
     return IndexSelectionAgent()
 
 
-# Example usage and testing
-if __name__ == "__main__":
-    # Set up basic logging for testing
-    logging.basicConfig(level=logging.INFO)
-
-    # Create agent
-    index_agent = create_index_selection_agent()
-
-    # Test the tools directly
-    print("Testing Index Selection Tools:")
-    print("1. Listing indices...")
-    indices = index_agent.discovery_tools.list_indices()
-    print(f"Found {indices.get('total_count', 0)} indices")
-
-    if indices.get("indices"):
-        first_index = indices["indices"][0]["name"]
-        print(f"\n2. Getting mapping for '{first_index}'...")
-        mapping = index_agent.discovery_tools.get_index_mapping(first_index)
-        print(
-            f"Index '{first_index}' has {mapping.get('properties_count', 0)} properties"
-        )
-    else:
-        print("No indices found to test mapping")
