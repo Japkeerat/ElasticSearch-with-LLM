@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Streamlit runner for the LLM ElasticSearch Agent.
-This file is used to properly run Streamlit with the unified agent.
+Fixed version with proper async handling and error management.
 """
 
 import sys
@@ -11,6 +11,7 @@ import uuid
 import logging
 from datetime import datetime
 from pathlib import Path
+import traceback
 
 # Add current directory to path
 sys.path.insert(0, os.path.dirname(__file__))
@@ -36,7 +37,7 @@ from llm_es_agent.orchestrator import create_orchestrator
 
 
 class StreamlitAgentApp:
-    """Streamlit-specific agent application."""
+    """Streamlit-specific agent application with improved async handling."""
     
     def __init__(self):
         self.orchestrator = None
@@ -44,19 +45,24 @@ class StreamlitAgentApp:
         self.session_service = None
         self.tracer = None
         self.logger = self._setup_logging()
+        self._active_tasks = set()  # Track active async tasks
     
     def _setup_logging(self):
-        """Set up basic logging."""
+        """Set up logging with better error handling."""
         logging.basicConfig(
             level=logging.INFO,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            handlers=[
+                logging.StreamHandler(),
+                logging.FileHandler('/app/logs/streamlit_agent.log', mode='a')
+            ] if os.path.exists('/app/logs') else [logging.StreamHandler()]
         )
         return logging.getLogger(__name__)
     
     def _setup_phoenix_tracing(self, phoenix_endpoint: str = "http://localhost:6006") -> bool:
-        """Set up Phoenix tracing for observability."""
+        """Set up Phoenix tracing with better error handling."""
         if not PHOENIX_AVAILABLE:
-            self.logger.warning("Phoenix observability not available")
+            self.logger.info("Phoenix observability not available")
             return False
 
         try:
@@ -104,77 +110,162 @@ class StreamlitAgentApp:
             return False
     
     async def process_query(self, query: str, user_id: str):
-        """Process user query through the orchestrator agent."""
+        """Process user query with improved error handling and task management."""
+        session_id = None
         try:
             session_id = f"session_{uuid.uuid4().hex[:8]}"
             
-            # Create session with initial state containing the user query
+            self.logger.info(f"Processing query for user {user_id}, session {session_id}")
+            
+            # Create session with initial state
             session = await self.session_service.create_session(
                 app_name="llm_es_agent_streamlit",
                 user_id=user_id,
                 session_id=session_id,
-                state={"original_user_query": query}  # Pass initial state here
+                state={"original_user_query": query}
             )
-            
-            # Note: No need to call set_session_state - we pass the initial state above
-            # The correct way is to set state during session creation or through events
             
             from google.genai import types
             content = types.Content(role="user", parts=[types.Part(text=query)])
             
             response_text = "Agent did not produce a final response."
             event_count = 0
+            events_processed = []
             
-            # Process agent events
-            async for event in self.runner.run_async(
-                user_id=user_id, 
-                session_id=session_id, 
-                new_message=content
-            ):
-                event_count += 1
-                
-                if event.is_final_response():
-                    if event.content and event.content.parts:
-                        response_text = event.content.parts[0].text
-                    break
+            # Process agent events with timeout and proper task management
+            try:
+                async with asyncio.timeout(120):  # 2 minute timeout
+                    async for event in self.runner.run_async(
+                        user_id=user_id, 
+                        session_id=session_id, 
+                        new_message=content
+                    ):
+                        event_count += 1
+                        events_processed.append({
+                            'event_type': type(event).__name__,
+                            'timestamp': datetime.now().isoformat(),
+                            'has_content': hasattr(event, 'content') and event.content is not None
+                        })
+                        
+                        self.logger.debug(f"Processing event {event_count}: {type(event).__name__}")
+                        
+                        # Check for final response
+                        if hasattr(event, 'is_final_response') and event.is_final_response():
+                            if event.content and event.content.parts:
+                                response_text = event.content.parts[0].text
+                                self.logger.info(f"Final response received: {response_text[:100]}...")
+                            break
+                        
+                        # Also check if it's a text response from any agent
+                        elif hasattr(event, 'content') and event.content and event.content.parts:
+                            potential_response = event.content.parts[0].text
+                            if potential_response and len(potential_response.strip()) > 10:
+                                response_text = potential_response
+                                self.logger.info(f"Agent response received: {response_text[:100]}...")
+                        
+                        # Safety check - don't process too many events
+                        if event_count > 50:
+                            self.logger.warning(f"Breaking after {event_count} events to prevent infinite loop")
+                            break
+                            
+            except asyncio.TimeoutError:
+                self.logger.error(f"Query processing timed out after 120 seconds")
+                return {
+                    "success": False,
+                    "error": "Query processing timed out. Please try a simpler query or check if Elasticsearch is responding.",
+                    "session_id": session_id,
+                    "event_count": event_count,
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            # Clean up the response text
+            if response_text and response_text.strip():
+                # Remove any JSON formatting if present
+                if response_text.strip().startswith('{') and response_text.strip().endswith('}'):
+                    try:
+                        import json
+                        parsed = json.loads(response_text)
+                        if 'natural_language_response' in parsed:
+                            response_text = parsed['natural_language_response']
+                        elif 'final_response' in parsed:
+                            response_text = parsed['final_response']
+                        else:
+                            response_text = "I processed your query successfully, but the response format needs adjustment."
+                    except:
+                        response_text = "I processed your query successfully, but the response format needs adjustment."
+            
+            self.logger.info(f"Query completed successfully. Events: {event_count}")
             
             return {
                 "success": True,
                 "response": response_text,
                 "session_id": session_id,
                 "event_count": event_count,
+                "events_processed": events_processed,
                 "timestamp": datetime.now().isoformat()
             }
             
         except Exception as e:
-            self.logger.error(f"Error processing query: {str(e)}", exc_info=True)
+            error_msg = str(e)
+            self.logger.error(f"Error processing query: {error_msg}", exc_info=True)
+            
+            # Clean up session if it was created
+            if session_id:
+                try:
+                    await self.session_service.delete_session(
+                        app_name="llm_es_agent_streamlit",
+                        user_id=user_id,
+                        session_id=session_id
+                    )
+                except:
+                    pass  # Ignore cleanup errors
+            
             return {
                 "success": False,
-                "error": str(e),
+                "error": f"An error occurred while processing your query: {error_msg}",
+                "session_id": session_id,
                 "timestamp": datetime.now().isoformat()
             }
+        
+        finally:
+            # Clean up any remaining tasks
+            self._cleanup_tasks()
+    
+    def _cleanup_tasks(self):
+        """Clean up any pending async tasks."""
+        for task in list(self._active_tasks):
+            if not task.done():
+                task.cancel()
+            self._active_tasks.discard(task)
 
 
-# Initialize the app instance
+# Initialize the app instance with better error handling
 @st.cache_resource
 def get_app_instance():
-    """Get or create the app instance."""
-    app = StreamlitAgentApp()
-    
-    # Setup tracing
-    phoenix_endpoint = os.getenv("PHOENIX_ENDPOINT", "http://localhost:6006")
-    app._setup_phoenix_tracing(phoenix_endpoint)
-    
-    # Initialize agent
-    if not app._initialize_agent():
-        st.error("Failed to initialize the agent. Please check the logs.")
+    """Get or create the app instance with improved error handling."""
+    try:
+        app = StreamlitAgentApp()
+        
+        # Setup tracing
+        phoenix_endpoint = os.getenv("PHOENIX_ENDPOINT", "http://phoenix:6006")
+        app._setup_phoenix_tracing(phoenix_endpoint)
+        
+        # Initialize agent
+        if not app._initialize_agent():
+            st.error("❌ Failed to initialize the agent. Please check the logs and try restarting the application.")
+            st.info("💡 Common solutions:\n- Restart Docker containers\n- Check Elasticsearch connectivity\n- Verify environment variables")
+            st.stop()
+        
+        return app
+        
+    except Exception as e:
+        st.error(f"❌ Critical error initializing application: {str(e)}")
+        st.code(traceback.format_exc())
         st.stop()
-    
-    return app
 
-# Main Streamlit App
+# Main Streamlit App with better error handling
 def main():
-    """Main Streamlit application."""
+    """Main Streamlit application with improved error handling."""
     
     # Configure Streamlit page
     st.set_page_config(
@@ -369,16 +460,12 @@ def render_main_interface(app):
         
         submit_button = st.form_submit_button("🚀 Submit", type="primary")
     
-    # Process query
+    # Process query with improved async handling
     if submit_button and user_query.strip():
         with st.spinner("🤔 Processing your query..."):
-            # Run the async query processing
             try:
-                # Create new event loop for this request
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                result = loop.run_until_complete(
+                # Use asyncio.run for better async handling in Streamlit
+                result = asyncio.run(
                     app.process_query(user_query, st.session_state.user_id)
                 )
                 
@@ -390,13 +477,13 @@ def render_main_interface(app):
                 }
                 
                 st.session_state.chat_history.append(chat_entry)
+                
+                # Force a rerun to show the new response
                 st.rerun()
                 
             except Exception as e:
-                st.error(f"Error processing query: {str(e)}")
-                
-            finally:
-                loop.close()
+                st.error(f"❌ Error processing query: {str(e)}")
+                st.code(traceback.format_exc())
 
 
 if __name__ == "__main__":

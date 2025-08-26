@@ -8,6 +8,7 @@ from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools import FunctionTool
 
 from llm_es_agent.tools.execution_tools import QueryExecutionTools
+from llm_es_agent.tools.session_tools import save_execution_results_data, get_session_data, get_user_query
 
 logger = logging.getLogger(__name__)
 
@@ -58,19 +59,29 @@ class QueryExecutionAgent:
         """
         # Create tools - FunctionTool automatically extracts name and description from function
         execute_query_tool = FunctionTool(self.execution_tools.execute_query)
+        
+        # Add session state management tools
+        save_execution_data_tool = FunctionTool(save_execution_results_data)
+        get_session_data_tool = FunctionTool(get_session_data)
+        get_user_query_tool = FunctionTool(get_user_query)
 
         # Load instructions from prompt file
         instructions = self._get_agent_instructions()
 
-        # Create the agent with output schema and output key for state management
+        # FIXED: Remove output_schema to allow natural language responses
         agent = LlmAgent(
             name="QueryExecutionAgent",
             model=LiteLlm("openai/gpt-4o-mini"),
             description="Specialized agent for executing Elasticsearch queries and presenting results in natural language",
             instruction=instructions,
-            tools=[execute_query_tool],
-            output_schema=QueryExecutionOutput,  # Enforces JSON output structure
-            output_key="query_execution_result",  # ADK will automatically save final response to session state
+            tools=[
+                execute_query_tool,
+                save_execution_data_tool,
+                get_session_data_tool,
+                get_user_query_tool
+            ],
+            # Removed output_schema - this agent provides the final natural language response
+            output_key="query_execution_result",
         )
 
         return agent
@@ -100,3 +111,13 @@ def create_query_execution_agent() -> QueryExecutionAgent:
         Configured QueryExecutionAgent instance
     """
     return QueryExecutionAgent()
+
+
+# Example usage and testing
+if __name__ == "__main__":
+    # Set up basic logging for testing
+    logging.basicConfig(level=logging.INFO)
+
+    # Create agent
+    execution_agent = create_query_execution_agent()
+    print("Query Execution Agent created successfully")

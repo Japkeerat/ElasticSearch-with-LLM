@@ -8,6 +8,7 @@ from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools import FunctionTool
 
 from llm_es_agent.tools.query_tools import QueryGenerationTools
+from llm_es_agent.tools.session_tools import save_query_generation_data, get_session_data, get_user_query
 
 logger = logging.getLogger(__name__)
 
@@ -95,19 +96,30 @@ class QueryGenerationAgent:
         validate_fields_tool = FunctionTool(
             self.query_tools.validate_fields_against_schema
         )
+        
+        # Add session state management tools
+        save_query_data_tool = FunctionTool(save_query_generation_data)
+        get_session_data_tool = FunctionTool(get_session_data)
+        get_user_query_tool = FunctionTool(get_user_query)
 
         # Load instructions from prompt file
         instructions = self._get_agent_instructions()
 
-        # Create the agent with output schema and output key for state management
+        # FIXED: Remove output_schema to allow natural language responses
         agent = LlmAgent(
             name="QueryGenerationAgent",
             model=LiteLlm("openai/gpt-4o-mini"),
             description="Specialized agent for generating Elasticsearch queries from natural language",
             instruction=instructions,
-            tools=[validate_syntax_tool, validate_fields_tool],
-            output_schema=QueryGenerationOutput,  # Enforces JSON output structure
-            output_key="query_generation_result",  # ADK will automatically save final response to session state
+            tools=[
+                validate_syntax_tool, 
+                validate_fields_tool,
+                save_query_data_tool,
+                get_session_data_tool,
+                get_user_query_tool
+            ],
+            # Removed output_schema - let the agent respond naturally
+            output_key="query_generation_result",
         )
 
         return agent
