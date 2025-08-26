@@ -57,34 +57,29 @@ services:
       retries: 5
       start_period: 60s
 
-  # Arize Phoenix Service
+  # Arize Phoenix Service - Simplified
   phoenix:
     image: arizephoenix/phoenix:latest
     container_name: llm-es-phoenix
-    environment:
-      - PHOENIX_HOST=0.0.0.0
-      - PHOENIX_PORT=6006
-      - PHOENIX_GRPC_PORT=4317
     ports:
       - "6006:6006"
-      - "4317:4317"
     networks:
       - llm-es-network
+    # Simplified healthcheck - just check if port responds
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:6006/health || exit 1"]
+      test: ["CMD-SHELL", "nc -z localhost 6006 || exit 1"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    volumes:
-      - phoenix_data:/phoenix/data
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    restart: unless-stopped
 
-  # LLM ES Agent Service
+  # Unified LLM ES Agent Service - FIXED STREAMLIT STARTUP
   llm-es-agent:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: llm-es-agent-app
+    container_name: llm-es-agent-unified
     environment:
       - ES_HOST=http://elasticsearch:9200
       - PHOENIX_ENDPOINT=http://phoenix:6006
@@ -92,25 +87,36 @@ services:
     env_file:
       - .env
     ports:
-      - "8000:8000"
+      - "8501:8501"  # Streamlit web interface
     networks:
       - llm-es-network
     depends_on:
       elasticsearch:
         condition: service_healthy
-      phoenix:
-        condition: service_healthy
     volumes:
       - ./logs:/app/logs
+    # OPTION 1: Use streamlit run directly (recommended)
+    command: [
+      "streamlit", "run", "streamlit_runner.py", 
+      "--server.port", "8501",
+      "--server.address", "0.0.0.0", 
+      "--server.headless", "true",
+      "--browser.gatherUsageStats", "false",
+      "--server.enableCORS", "false"
+    ]
+    
+    # OPTION 2: Alternative - use the Python app (uncomment if needed)
+    # command: ["python", "app.py", "--interface", "web", "--port", "8501"]
+    
     stdin_open: true
     tty: true
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import sys; sys.exit(0)'"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8501/_stcore/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 45s
 
 # Networks
 networks:
@@ -123,6 +129,3 @@ volumes:
   elasticsearch_data:
     driver: local
     name: llm-es-elasticsearch-data
-  phoenix_data:
-    driver: local
-    name: llm-es-phoenix-data

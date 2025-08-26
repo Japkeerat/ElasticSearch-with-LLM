@@ -29,17 +29,22 @@ COPY . .
 # Create logs directory
 RUN mkdir -p logs
 
+# Create Streamlit config directory and file
+RUN mkdir -p /app/.streamlit
+COPY .streamlit/config.toml /app/.streamlit/config.toml
+
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN chown -R appuser:appuser /app
 USER appuser
 
-# Expose port (if needed for future web interface)
-EXPOSE 8000
+# Expose ports
+EXPOSE 8501 8000
 
-# Health check
+# Health check script that works for both interfaces
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import sys; sys.exit(0)"
 
-# Default command
-CMD ["python", "main.py"]
+# Default command runs Streamlit interface
+# Can be overridden in docker-compose or docker run
+CMD ["python", "app.py", "--interface", "web", "--port", "8501"]

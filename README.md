@@ -142,7 +142,7 @@ Create or edit `config.yaml` in the project root:
 agents:
   orchestrator: "openai/gpt-4o-mini"
   elasticsearch: "openai/gpt-4o-mini"
-  index_selection: "openai/gpt-3.5-turbo"  # Lighter model for simple tasks
+  index_selection: "openai/gpt-3.5-turbo" 
   query_generation: "openai/gpt-4o-mini"
   query_execution: "openai/gpt-4o-mini"
 ```
