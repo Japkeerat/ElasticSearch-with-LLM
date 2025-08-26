@@ -197,15 +197,12 @@ You: What is this agent capable of?
 ├── llm_es_agent/           # Core agent modules
 │   ├── agents/             # Individual agent implementations
 │   ├── tools/              # ElasticSearch tools and utilities
-│   ├── config.py           # Configuration management system
 │   ├── orchestrator.py     # Main orchestrator logic
 │   └── pipeline_agent.py   # Pipeline management
 ├── prompts/                # Agent instruction templates
 ├── config.yaml             # Agent model configuration
 ├── main.py                 # Application entry point
 ├── requirements.txt        # Python dependencies
-├── test_config_system.py   # Configuration system tests
-├── CONFIGURATION_GUIDE.md  # Detailed configuration guide
 ├── Dockerfile             # Container configuration
 ├── docker-compose.yml     # Multi-service orchestration
 └── .env.example          # Environment template

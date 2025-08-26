@@ -148,35 +148,3 @@ def create_query_generation_agent() -> QueryGenerationAgent:
     return QueryGenerationAgent()
 
 
-# Example usage and testing
-if __name__ == "__main__":
-    # Set up basic logging for testing
-    logging.basicConfig(level=logging.INFO)
-
-    # Create agent
-    query_agent = create_query_generation_agent()
-
-    # Test the tools directly
-    print("Testing Query Generation Tools:")
-
-    # Test query validation
-    test_query = {"query": {"match": {"title": "elasticsearch"}}, "size": 10}
-
-    print("1. Testing query syntax validation...")
-    validation_result = query_agent.query_tools.validate_query_syntax(test_query)
-    print(f"Validation result: {validation_result}")
-
-    # Test field validation with mock schema
-    mock_schema = {
-        "schema": {
-            "title": {"type": "text"},
-            "content": {"type": "text"},
-            "timestamp": {"type": "date"},
-        }
-    }
-
-    print("\n2. Testing field validation against schema...")
-    field_validation = query_agent.query_tools.validate_fields_against_schema(
-        test_query, mock_schema
-    )
-    print(f"Field validation result: {field_validation}")

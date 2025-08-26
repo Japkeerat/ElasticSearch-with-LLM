@@ -58,29 +58,16 @@ class ElasticsearchPipelineAgent:
         Returns:
             Configured SequentialAgent instance
         """
-        
-        # CRITICAL FIX: Ensure agents are configured properly for sequential execution
-        # Remove any output_key from individual agents that might interfere with pipeline flow
-        index_agent = self.index_selection_agent.agent
-        query_agent = self.query_generation_agent.agent  
-        execution_agent = self.query_execution_agent.agent
-        
-        # Clear output_key if set to prevent early pipeline termination
-        if hasattr(index_agent, 'output_key'):
-            index_agent.output_key = None
-        if hasattr(query_agent, 'output_key'):
-            query_agent.output_key = None
-        # Only the final agent should have output_key
-        if hasattr(execution_agent, 'output_key'):
-            execution_agent.output_key = "final_pipeline_result"
 
+        # Create SequentialAgent following ADK best practices
+        # Each sub-agent keeps its output_key for state management
         agent = SequentialAgent(
             name="ElasticsearchPipelineAgent",
             description="Orchestrates the complete Elasticsearch query pipeline from natural language to results",
             sub_agents=[
-                index_agent,
-                query_agent,
-                execution_agent,
+                self.index_selection_agent.agent,
+                self.query_generation_agent.agent,
+                self.query_execution_agent.agent,
             ],
         )
 
@@ -102,8 +89,6 @@ class ElasticsearchPipelineAgentWrapper:
     
     def _create_wrapper_agent(self) -> LlmAgent:
         """Create a wrapper agent that explicitly manages the pipeline"""
-        
-        from pathlib import Path
         
         # Load pipeline orchestration instructions
         instructions = self._get_pipeline_instructions()
@@ -155,11 +140,11 @@ def create_elasticsearch_pipeline_agent_wrapper() -> ElasticsearchPipelineAgentW
     return ElasticsearchPipelineAgentWrapper()
 
 
-# Backward compatibility - try the wrapper approach first
+# Use wrapper approach for reliable pipeline execution
 def create_elasticsearch_agent() -> ElasticsearchPipelineAgentWrapper:
     """
     Factory function for backward compatibility.
-    Uses the wrapper approach for more reliable pipeline execution.
+    Uses the wrapper approach for reliable pipeline execution.
 
     Returns:
         Configured ElasticsearchPipelineAgentWrapper instance
