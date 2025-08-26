@@ -57,16 +57,18 @@ class ElasticsearchPipelineAgent:
             Configured SequentialAgent instance
         """
         # Create the sequential agent that runs agents in pipeline order
+        # Note: SequentialAgent expects 'sub_agents' parameter, not 'agents'
+        # Note: SequentialAgent does NOT support 'output_schema' or 'output_key' parameters
         agent = SequentialAgent(
             name="ElasticsearchPipelineAgent",
             description="Orchestrates the complete Elasticsearch query pipeline from natural language to results",
-            agents=[
+            sub_agents=[  # Changed from 'agents' to 'sub_agents'
                 self.index_selection_agent.agent,
                 self.query_generation_agent.agent,
                 self.query_execution_agent.agent,
             ],
-            output_schema=PipelineResult,
-            output_key="elasticsearch_pipeline_result",
+            # Removed output_schema and output_key as they're not supported by SequentialAgent
+            # The individual LlmAgents in the pipeline will handle their own output_schema and output_key
         )
 
         return agent

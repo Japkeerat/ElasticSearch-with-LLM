@@ -416,9 +416,9 @@ app._run_streamlit_app()
         st.sidebar.markdown("---")
         st.sidebar.markdown("## 🔗 Service Links")
         if PHOENIX_AVAILABLE:
-            st.sidebar.markdown("🔍 [Phoenix Dashboard](http://localhost:6006)")
-        st.sidebar.markdown("📊 [Kibana Dashboard](http://localhost:5601)")
-        st.sidebar.markdown("🔌 [ElasticSearch API](http://localhost:9200)")
+            st.sidebar.markdown("🔍 [Phoenix Dashboard](http://0.0.0.0:6006)")
+        st.sidebar.markdown("📊 [Kibana Dashboard](http://0.0.0.0:5601)")
+        st.sidebar.markdown("🔌 [ElasticSearch API](http://0.0.0.0:9200)")
         
         # Example queries
         st.sidebar.markdown("---")

@@ -107,19 +107,17 @@ class StreamlitAgentApp:
         """Process user query through the orchestrator agent."""
         try:
             session_id = f"session_{uuid.uuid4().hex[:8]}"
+            
+            # Create session with initial state containing the user query
             session = await self.session_service.create_session(
                 app_name="llm_es_agent_streamlit",
                 user_id=user_id,
-                session_id=session_id
+                session_id=session_id,
+                state={"original_user_query": query}  # Pass initial state here
             )
             
-            await self.session_service.set_session_state(
-                app_name="llm_es_agent_streamlit",
-                user_id=user_id,
-                session_id=session_id,
-                key="original_user_query",
-                value=query,
-            )
+            # Note: No need to call set_session_state - we pass the initial state above
+            # The correct way is to set state during session creation or through events
             
             from google.genai import types
             content = types.Content(role="user", parts=[types.Part(text=query)])
@@ -149,6 +147,7 @@ class StreamlitAgentApp:
             }
             
         except Exception as e:
+            self.logger.error(f"Error processing query: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),
