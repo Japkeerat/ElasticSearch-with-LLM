@@ -2,8 +2,11 @@ import sys
 import uuid
 import logging
 import asyncio
+import warnings
+import os
 from pathlib import Path
 from typing import Optional
+from contextlib import contextmanager
 
 from dotenv import load_dotenv
 
@@ -21,6 +24,10 @@ except ImportError as e:
     PHOENIX_AVAILABLE = False
 
 from llm_es_agent.orchestrator import create_orchestrator
+from llm_es_agent.tracing_utils import (
+    safe_tracing_context,
+    initialize_safe_tracing,
+)
 
 
 # Load environment variables
@@ -44,28 +51,8 @@ def setup_phoenix_tracing(phoenix_endpoint: str = "http://localhost:6006") -> bo
         )
         return False
 
-    try:
-        # Configure OpenTelemetry tracer
-        resource = Resource.create({"service.name": "llm-es-agent"})
-
-        tracer_provider = trace_sdk.TracerProvider(resource=resource)
-        trace_api.set_tracer_provider(tracer_provider)
-
-        # Set up OTLP exporter for Phoenix
-        otlp_exporter = OTLPSpanExporter(
-            endpoint=f"{phoenix_endpoint}/v1/traces", headers={}
-        )
-
-        # Add the exporter to the tracer provider
-        tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-
-        print(f"✅ Phoenix tracing initialized - Dashboard: {phoenix_endpoint}")
-        return True
-
-    except Exception as e:
-        print(f"⚠️  Warning: Could not initialize Phoenix tracing: {str(e)}")
-        print("Continuing without observability...")
-        return False
+    # Use the centralized safe tracing initialization
+    return initialize_safe_tracing("llm-es-agent", phoenix_endpoint)
 
 
 def create_custom_tracer():
@@ -236,7 +223,7 @@ async def _process_query_internal(
             app_name=app_name,
             user_id=user_id,
             session_id=session_id,
-            state={"original_user_query": query}
+            state={"original_user_query": query},
         )
         logger.debug(f"Created session {session_id} with user query: {query}")
 
@@ -255,20 +242,31 @@ async def _process_query_internal(
         if span:
             span.add_event("agent_execution_started")
 
-        async for event in runner.run_async(
-            user_id=user_id, session_id=session_id, new_message=content
-        ):
-            event_count += 1
-            logger.debug(f"Received event {event_count}: {event.author}")
+        # Process events with proper error handling for OpenTelemetry context issues
+        try:
+            with safe_tracing_context():
+                async for event in runner.run_async(
+                    user_id=user_id, session_id=session_id, new_message=content
+                ):
+                    event_count += 1
+                    logger.debug(f"Received event {event_count}: {event.author}")
 
-            # Check for final response
-            if event.is_final_response():
-                if event.content and event.content.parts:
-                    final_response_text = event.content.parts[0].text
-                    if span:
-                        span.set_attribute("response.length", len(final_response_text))
-                        span.add_event("final_response_received")
-                    break
+                    # Check for final response
+                    if event.is_final_response():
+                        if event.content and event.content.parts:
+                            final_response_text = event.content.parts[0].text
+                            if span:
+                                span.set_attribute(
+                                    "response.length", len(final_response_text)
+                                )
+                                span.add_event("final_response_received")
+                            break
+        except GeneratorExit:
+            # Handle generator exit gracefully
+            logger.debug("Event generator was closed")
+        except Exception as gen_error:
+            logger.error(f"Error in event processing: {gen_error}")
+            # Don't re-raise, let the function continue with partial results
 
         if span:
             span.set_attribute("events.total_count", event_count)
