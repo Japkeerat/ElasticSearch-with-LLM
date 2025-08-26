@@ -101,13 +101,14 @@ Agent: [Analyzes user activity data, creates aggregation query, presents insight
    ```
 
 5. **Connect to the interactive agent:**
-   ```bash
-   docker-compose logs -f llm-es-agent
-   ```
+   
+   Visit http://0.0.0.0:8501 for the streamlit service
+
+   ![streamlit-dashboard](image.png)
 
 ### Service Access Points
 
-- **LLM Agent**: Interactive terminal via `docker-compose logs -f llm-es-agent`
+- **LLM Agent**: http://localhost:8501
 - **Kibana Dashboard**: http://localhost:5601
 - **Phoenix Observability**: http://localhost:6006
 - **ElasticSearch API**: http://localhost:9200
@@ -148,15 +149,8 @@ agents:
 ```
 
 ### Supported Models
-- `openai/gpt-4o` - Most capable, highest cost
-- `openai/gpt-4o-mini` - Good balance (default)
-- `openai/gpt-3.5-turbo` - Fastest, lowest cost
-- Any model supported by LiteLLM
+This is tested with `openai/gpt-4o-mini` but should work with any model and provider supported with LiteLLM. To replicate results, I'll suggest to use `openai` API and use `openai/gpt-4o-mini` (default in configurations).
 
-### Testing Configuration
-```bash
-python test_config_system.py
-```
 
 ## 📊 Usage Examples
 
@@ -264,12 +258,4 @@ docker-compose restart
 # Clean restart (removes data)
 docker-compose down -v && docker-compose up -d
 ```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
 
